@@ -29,6 +29,18 @@ $(TARGET): $(C_SRC) $(ARM64_SRC)
 run: $(TARGET)
 	./$(TARGET)
 
+# Run automated test suite (each test case in isolation)
+test: translate
+	@echo "Running automated test suite with isolated test cases..."
+	./test_runner.sh
+
+# Run single combined test (may have static state issues)
+test-combined: translate
+	@echo "Running combined test suite (may have static state issues)..."
+	@mkdir -p build
+	$(CC) $(CFLAGS) -g test_iir.c $(ARM64_SRC) -o build/test_iir
+	./build/test_iir
+
 # Clean build artifacts
 clean:
 	rm -rf build/ *.o
@@ -56,6 +68,8 @@ help:
 	@echo "  all             - Translate and build (default)"
 	@echo "  translate       - Just translate iir.s to ARM64"
 	@echo "  run             - Build and run the program"
+	@echo "  test            - Run automated test suite (isolated)"
+	@echo "  test-combined   - Run combined test suite (static state issues)"
 	@echo "  show-translated - Display the translated assembly"
 	@echo "  compare         - Show original vs translated"
 	@echo "  clean           - Remove build artifacts"
@@ -66,4 +80,4 @@ help:
 	@echo "  2. Translates to iir_translated.s (ARM64)"
 	@echo "  3. Compiles with main.c for your Mac"
 
-.PHONY: all translate run clean show-translated compare help
+.PHONY: all translate run test test-combined clean show-translated compare help

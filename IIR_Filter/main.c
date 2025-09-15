@@ -32,8 +32,21 @@
 // Stub function for non-embedded environment
 void initialise_monitor_handles(void) { /* No-op for regular compilation */ }
  
- extern int iir(int N, int* b, int* a, int x_n); // asm implementation
- int iir_c(int N, int* b, int* a, int x_n); // reference C implementation
+extern int iir(int N, int* b, int* a, int x_n); // asm implementation
+int iir_c(int N, int* b, int* a, int x_n); // reference C implementation
+
+// Helper function to reset static arrays in iir_c between test cases
+void reset_iir_c_state(void);
+
+// Test case structure
+typedef struct {
+    int test_num;
+    int N;
+    int b[N_MAX+1];
+    int a[N_MAX+1];
+    int x[X_SIZE];
+    int x_size;  // Actual size of x array for this test
+} test_case_t;
  
  int main(void)
  {

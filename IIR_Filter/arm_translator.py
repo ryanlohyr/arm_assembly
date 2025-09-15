@@ -20,6 +20,8 @@ def translate_line(line):
     # Fix .section directive for macOS
     if '.section .text' in line:
         return '.text\n'
+    if '.section .bss' in line:
+        return '.data\n'  # Use .data section for BSS on macOS
     
     # Handle comments - ARM uses @ but AArch64 uses // or /* */
     if '@' in line and not line.strip().startswith('@'):
@@ -60,7 +62,8 @@ def translate_line(line):
     if 'BX' in line and 'LR' in line:
         return '    ret\n'
     
-    # LDR with register addressing
+    # LDR with register addressing - handle various forms
+    # LDR Rd, [Rn] - simple indirect
     if re.match(r'\s*LDR\s+R(\d+),\s*\[R(\d+)\]', line):
         match = re.match(r'\s*LDR\s+R(\d+),\s*\[R(\d+)\](.*)', line)
         if match:
@@ -69,6 +72,45 @@ def translate_line(line):
             comment = match.group(3)
             return f'    ldr w{rd}, [x{rn}]{comment}\n'
     
+    # LDR Rd, [Rn, Rm] - indexed addressing
+    if re.match(r'\s*LDR\s+R(\d+),\s*\[R(\d+),\s*R(\d+)\]', line):
+        match = re.match(r'\s*LDR\s+R(\d+),\s*\[R(\d+),\s*R(\d+)\](.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            rm = match.group(3)
+            comment = match.group(4)
+            return f'    ldr w{rd}, [x{rn}, w{rm}, uxtw]{comment}\n'
+    
+    # LDR Rd, =label - load address
+    if re.match(r'\s*LDR\s+R(\d+),\s*=(\w+)', line):
+        match = re.match(r'\s*LDR\s+R(\d+),\s*=(\w+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            label = match.group(2)
+            comment = match.group(3)
+            return f'    adrp x{rd}, {label}@PAGE\n    add x{rd}, x{rd}, {label}@PAGEOFF{comment}\n'
+    
+    # STR instructions - handle various forms
+    # STR Rd, [Rn] - simple indirect
+    if re.match(r'\s*STR\s+R(\d+),\s*\[R(\d+)\]', line):
+        match = re.match(r'\s*STR\s+R(\d+),\s*\[R(\d+)\](.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            comment = match.group(3)
+            return f'    str w{rd}, [x{rn}]{comment}\n'
+    
+    # STR Rd, [Rn, Rm] - indexed addressing
+    if re.match(r'\s*STR\s+R(\d+),\s*\[R(\d+),\s*R(\d+)\]', line):
+        match = re.match(r'\s*STR\s+R(\d+),\s*\[R(\d+),\s*R(\d+)\](.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            rm = match.group(3)
+            comment = match.group(4)
+            return f'    str w{rd}, [x{rn}, w{rm}, uxtw]{comment}\n'
+
     # MUL instruction
     if re.match(r'\s*MUL\s+R(\d+),\s*R(\d+),\s*R(\d+)', line):
         match = re.match(r'\s*MUL\s+R(\d+),\s*R(\d+),\s*R(\d+)(.*)', line)
@@ -89,24 +131,102 @@ def translate_line(line):
             comment = match.group(4)
             return f'    sdiv w{rd}, w{rn}, w{rm}{comment}\n'
     
+    # ADD instructions
+    if re.match(r'\s*ADD\s+R(\d+),\s*R(\d+),\s*#(\d+)', line):
+        match = re.match(r'\s*ADD\s+R(\d+),\s*R(\d+),\s*#(\d+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            imm = match.group(3)
+            comment = match.group(4)
+            return f'    add w{rd}, w{rn}, #{imm}{comment}\n'
+    
+    if re.match(r'\s*ADD\s+R(\d+),\s*R(\d+),\s*R(\d+)', line):
+        match = re.match(r'\s*ADD\s+R(\d+),\s*R(\d+),\s*R(\d+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            rm = match.group(3)
+            comment = match.group(4)
+            return f'    add w{rd}, w{rn}, w{rm}{comment}\n'
+    
+    # SUB instructions
+    if re.match(r'\s*SUB\s+R(\d+),\s*R(\d+),\s*#(\d+)', line):
+        match = re.match(r'\s*SUB\s+R(\d+),\s*R(\d+),\s*#(\d+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            imm = match.group(3)
+            comment = match.group(4)
+            return f'    sub w{rd}, w{rn}, #{imm}{comment}\n'
+    
+    if re.match(r'\s*SUB\s+R(\d+),\s*R(\d+),\s*R(\d+)', line):
+        match = re.match(r'\s*SUB\s+R(\d+),\s*R(\d+),\s*R(\d+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            rm = match.group(3)
+            comment = match.group(4)
+            return f'    sub w{rd}, w{rn}, w{rm}{comment}\n'
+    
+    # LSL (Logical Shift Left) instructions
+    if re.match(r'\s*LSL\s+R(\d+),\s*R(\d+),\s*#(\d+)', line):
+        match = re.match(r'\s*LSL\s+R(\d+),\s*R(\d+),\s*#(\d+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            imm = match.group(3)
+            comment = match.group(4)
+            return f'    lsl w{rd}, w{rn}, #{imm}{comment}\n'
+    
     # CMP and conditional branch
+    if re.match(r'\s*CMP\s+R(\d+),\s*R(\d+)', line):
+        match = re.match(r'\s*CMP\s+R(\d+),\s*R(\d+)(.*)', line)
+        if match:
+            rn = match.group(1)
+            rm = match.group(2)
+            comment = match.group(3)
+            return f'    cmp w{rn}, w{rm}{comment}\n'
+    
     if re.match(r'\s*CMP\s+R(\d+),\s*#(\d+)', line):
         match = re.match(r'\s*CMP\s+R(\d+),\s*#(\d+)(.*)', line)
         if match:
             rn = match.group(1)
             imm = match.group(2)
             comment = match.group(3)
-            if imm == '0':
-                # For zero comparison, we'll use cbz in the next BEQ
-                return f'    // cmp w{rn}, #{imm} - will use cbz{comment}\n'
-            else:
-                return f'    cmp w{rn}, #{imm}{comment}\n'
+            return f'    cmp w{rn}, #{imm}{comment}\n'
     
-    # BEQ after CMP #0 -> cbz
-    if 'BEQ' in line:
-        return line.replace('BEQ', 'cbz w5,')  # Assuming R5 from previous CMP
+    # Conditional branches
+    if re.match(r'\s*BGT\s+(\w+)', line):
+        match = re.match(r'\s*BGT\s+(\w+)(.*)', line)
+        if match:
+            label = match.group(1)
+            comment = match.group(2)
+            return f'    b.gt {label}{comment}\n'
     
-    # MOV immediate
+    if re.match(r'\s*BLE\s+(\w+)', line):
+        match = re.match(r'\s*BLE\s+(\w+)(.*)', line)
+        if match:
+            label = match.group(1)
+            comment = match.group(2)
+            return f'    b.le {label}{comment}\n'
+    
+    if re.match(r'\s*BEQ\s+(\w+)', line):
+        match = re.match(r'\s*BEQ\s+(\w+)(.*)', line)
+        if match:
+            label = match.group(1)
+            comment = match.group(2)
+            return f'    b.eq {label}{comment}\n'
+    
+    # MOV instructions
+    if re.match(r'\s*MOV\s+R(\d+),\s*R(\d+)', line):
+        match = re.match(r'\s*MOV\s+R(\d+),\s*R(\d+)(.*)', line)
+        if match:
+            rd = match.group(1)
+            rn = match.group(2)
+            comment = match.group(3)
+            return f'    mov w{rd}, w{rn}{comment}\n'
+    
     if re.match(r'\s*MOV\s+R(\d+),\s*#(\d+)', line):
         match = re.match(r'\s*MOV\s+R(\d+),\s*#(\d+)(.*)', line)
         if match:
